@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estação Meteorológica</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700;12..96,800&family=Figtree:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #eef2f3;
+    --ink: #14232e;
+    --muted: #5b6b76;
+    --line: #cfd9dd;
+    --accent: #0f6f8f;
+    --sun: #e8a317;
+    --hero-fg: #fff;
+    --sky-top: #0b1a2e;
+    --sky-bottom: #24405e;
+    --display: "Bricolage Grotesque", "Trebuchet MS", sans-serif;
+    --body: "Figtree", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); line-height: 1.5; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 20px 48px; }
+
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  h1 { font: 800 1.25rem/1.2 var(--display); margin: 0; }
+  .sub { color: var(--muted); font-size: .875rem; margin: 2px 0 0; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { font: 600 .9375rem var(--body); padding: 10px 16px; border-radius: 8px; border: 1.5px solid var(--ink); background: transparent; color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--ink); color: #fff; }
+  button:hover { filter: brightness(1.15); }
+  button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  #status { font-size: .875rem; color: var(--muted); margin: 0 0 16px; min-height: 1.4em; }
+  #status.err { color: #b3261e; }
+
+  /* Céu: a cor muda conforme a luminosidade medida */
+  .sky { border-radius: 20px; padding: 36px 32px 28px; color: var(--hero-fg);
+         background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom)); transition: background .8s, color .8s; }
+  .sky .label { font-size: .9375rem; opacity: .85; }
+  .temp { font: 800 clamp(4.5rem, 16vw, 9rem)/1 var(--display); letter-spacing: -.04em; margin: 4px 0 0; }
+  .temp small { font-size: .35em; font-weight: 400; letter-spacing: 0; margin-left: 4px; }
+  .sky-foot { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-top: 20px; flex-wrap: wrap; }
+  .sky-foot p { margin: 0; font-size: .875rem; opacity: .85; }
+  .sky svg { width: min(100%, 360px); height: 56px; }
+
+  ul.metrics { list-style: none; margin: 28px 0 0; padding: 0; border-top: 1.5px solid var(--ink); }
+  ul.metrics li { display: grid; grid-template-columns: 1.1fr 1fr 1.4fr; gap: 16px; align-items: center; padding: 18px 0; border-bottom: 1px solid var(--line); }
+  .m-name { font-weight: 600; }
+  .m-name span { display: block; font-weight: 400; font-size: .8125rem; color: var(--muted); }
+  .m-val { font: 700 2rem/1 var(--display); }
+  .m-val small { font: 400 .9375rem var(--body); color: var(--muted); margin-left: 4px; }
+  .m-val .range { display: block; font: 400 .8125rem var(--body); color: var(--muted); margin-top: 6px; }
+  ul.metrics svg { width: 100%; height: 44px; }
+  .spark { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .sky .spark { stroke: currentColor; opacity: .9; }
+
+  footer { margin-top: 28px; color: var(--muted); font-size: .8125rem; }
+  @media (max-width: 640px) {
+    ul.metrics li { grid-template-columns: 1fr 1fr; }
+    ul.metrics li svg { grid-column: 1 / -1; }
+    .sky { padding: 28px 22px 22px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .sky { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Estação Meteorológica</h1>
+      <p class="sub">AHT20 · BMP280 · VEML7700</p>
+    </div>
+    <div class="actions">
+      <button class="primary" id="btnConnect">Conectar ao Arduino</button>
+      <button id="btnDemo">Ver demonstração</button>
+    </div>
+  </header>
+
+  <p id="status" role="status">Desconectado. Conecte o Arduino por USB e clique em “Conectar ao Arduino”.</p>
+
+  <section class="sky" id="sky" aria-label="Temperatura atual">
+    <div class="label">Temperatura agora</div>
+    <p class="temp"><span id="temp">--</span><small>°C</small></p>
+    <div class="sky-foot">
+      <p id="skyNote">Aguardando a primeira leitura</p>
+      <svg id="sp-temp" viewBox="0 0 300 56" preserveAspectRatio="none" aria-hidden="true"></svg>
+    </div>
+  </section>
+
+  <ul class="metrics">
+    <li>
+      <div class="m-name">Umidade<span>Umidade relativa do ar</span></div>
+      <div class="m-val"><span id="v-hum">--</span><small>%</small><span class="range" id="r-hum"></span></div>
+      <svg id="sp-hum" viewBox="0 0 300 44" preserveAspectRatio="none" aria-hidden="true"></svg>
+    </li>
+    <li>
+      <div class="m-name">Pressão<span>Pressão atmosférica</span></div>
+      <div class="m-val"><span id="v-pres">--</span><small>hPa</small><span class="range" id="r-pres"></span></div>
+      <svg id="sp-pres" viewBox="0 0 300 44" preserveAspectRatio="none" aria-hidden="true"></svg>
+    </li>
+    <li>
+      <div class="m-name">Altitude<span>Estimada pela pressão</span></div>
+      <div class="m-val"><span id="v-alt">--</span><small>m</small><span class="range" id="r-alt"></span></div>
+      <svg id="sp-alt" viewBox="0 0 300 44" preserveAspectRatio="none" aria-hidden="true"></svg>
+    </li>
+    <li>
+      <div class="m-name">Luminosidade<span>Luz ambiente</span></div>
+      <div class="m-val"><span id="v-lux">--</span><small>lux</small><span class="range" id="r-lux"></span></div>
+      <svg id="sp-lux" viewBox="0 0 300 44" preserveAspectRatio="none" aria-hidden="true"></svg>
+    </li>
+  </ul>
+
+  <footer>Mostra as últimas 60 leituras. O céu no topo escurece e clareia conforme a luminosidade medida pelo VEML7700.</footer>
+</main>
+
+<script>
+const MAX = 60;
+const hist = { temp: [], hum: [], pres: [], alt: [], lux: [] };
+let cur = {}, port = null, reader = null, demoTimer = null;
+const $ = id => document.getElementById(id);
+
+function setStatus(msg, isErr = false) { const s = $("status"); s.textContent = msg; s.className = isErr ? "err" : ""; }
+
+/* ---------- Interpretação das linhas do Serial ---------- */
+function parseLine(line) {
+  const i = line.indexOf(":");
+  if (i < 0) return;
+  const nome = line.slice(0, i).trim();
+  const m = line.slice(i + 1).match(/-?\d+(\.\d+)?/); // só o número depois dos ":"
+  if (!m) return;
+  const v = parseFloat(m[0]);
+
+  if (nome.startsWith("Temperatura")) cur.temp = v;
+  else if (nome.startsWith("Umidade")) cur.hum = v;
+  else if (nome.startsWith("Press")) cur.pres = v;
+  else if (nome.startsWith("Altitude")) cur.alt = v;
+  else if (nome.startsWith("Luminosidade")) { cur.lux = v; commit(); } // última linha do bloco
+}
+
+function commit() {
+  for (const k of Object.keys(hist)) {
+    if (cur[k] === undefined) continue;
+    hist[k].push(cur[k]);
+    if (hist[k].length > MAX) hist[k].shift();
+  }
+  render();
+  cur = {};
+}
+
+/* ---------- Tela ---------- */
+const fmt = (v, d = 1) => (v === undefined ? "--" : v.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d }));
+
+function spark(id, data) {
+  const svg = $(id); if (data.length < 2) { svg.innerHTML = ""; return; }
+  const h = +svg.viewBox.baseVal.height, w = 300, pad = 4;
+  const min = Math.min(...data), max = Math.max(...data), span = (max - min) || 1;
+  const pts = data.map((v, i) => `${(i / (MAX - 1)) * w + (w - (data.length - 1) / (MAX - 1) * w)},${h - pad - ((v - min) / span) * (h - 2 * pad)}`);
+  svg.innerHTML = `<polyline class="spark" points="${pts.join(" ")}"/>`;
+}
+
+function range(id, data, d, unit) {
+  if (!data.length) return;
+  $(id).textContent = `mín ${fmt(Math.min(...data), d)} · máx ${fmt(Math.max(...data), d)} ${unit}`;
+}
+
+function mix(a, b, t) { return a.map((x, i) => Math.round(x + (b[i] - x) * t)); }
+
+function paintSky(lux) {
+  // escala logarítmica: 0 lux = noite, ~100.000 lux = sol pleno
+  const t = Math.min(1, Math.log10(lux + 1) / 4.5);
+  const top = mix([11, 26, 46], [46, 140, 205], t);
+  const bot = mix([36, 64, 94], [190, 226, 244], t);
+  const root = document.documentElement.style;
+  root.setProperty("--sky-top", `rgb(${top})`);
+  root.setProperty("--sky-bottom", `rgb(${bot})`);
+  root.setProperty("--hero-fg", t > 0.62 ? "#0d2233" : "#ffffff");
+  $("skyNote").textContent = t < 0.15 ? "Escuro ao redor" : t < 0.45 ? "Ambiente com pouca luz" : t < 0.7 ? "Ambiente bem iluminado" : "Luz forte, como ao ar livre";
+}
+
+function render() {
+  const last = k => hist[k][hist[k].length - 1];
+  $("temp").textContent = fmt(last("temp"));
+  $("v-hum").textContent = fmt(last("hum"));
+  $("v-pres").textContent = fmt(last("pres"));
+  $("v-alt").textContent = fmt(last("alt"), 0);
+  $("v-lux").textContent = fmt(last("lux"), 0);
+  range("r-hum", hist.hum, 1, "%"); range("r-pres", hist.pres, 1, "hPa");
+  range("r-alt", hist.alt, 0, "m"); range("r-lux", hist.lux, 0, "lux");
+  for (const k of Object.keys(hist)) spark("sp-" + k, hist[k]);
+  if (last("lux") !== undefined) paintSky(last("lux"));
+}
+
+/* ---------- Conexão serial (Chrome / Edge) ---------- */
+async function connect() {
+  if (!("serial" in navigator)) {
+    setStatus("Este navegador não permite acesso à porta serial. Abra o site no Chrome ou no Edge.", true);
+    return;
+  }
+  stopDemo();
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 9600 });
+  } catch (e) {
+    setStatus(e.name === "NotFoundError"
+      ? "Nenhuma porta foi escolhida. Clique em “Conectar ao Arduino” e selecione a porta."
+      : "Não foi possível abrir a porta. Feche o Monitor Serial do Arduino IDE e tente de novo.", true);
+    port = null; return;
+  }
+  setStatus("Conectado. Aguardando dados do Arduino (leituras a cada 2 segundos).");
+  $("btnConnect").textContent = "Desconectar";
+  readLoop();
+}
+
+async function readLoop() {
+  const decoder = new TextDecoderStream();
+  const closed = port.readable.pipeTo(decoder.writable).catch(() => {});
+  reader = decoder.readable.getReader();
+  let buf = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      const lines = buf.split("\n"); buf = lines.pop();
+      lines.forEach(parseLine);
+    }
+  } catch (e) {
+    setStatus("A conexão foi interrompida. Verifique o cabo USB e conecte novamente.", true);
+  } finally {
+    reader.releaseLock(); await closed;
+  }
+}
+
+async function disconnect() {
+  try { await reader?.cancel(); await port?.close(); } catch (e) {}
+  port = null; reader = null;
+  $("btnConnect").textContent = "Conectar ao Arduino";
+  setStatus("Desconectado.");
+}
+
+/* ---------- Demonstração (sem Arduino) ---------- */
+function startDemo() {
+  if (port) disconnect();
+  stopDemo();
+  let t = 0;
+  const tick = () => {
+    t += 1;
+    cur = {
+      temp: 24 + 3 * Math.sin(t / 12) + Math.random() * .3,
+      hum: 58 + 8 * Math.cos(t / 15) + Math.random(),
+      pres: 1013 + 2 * Math.sin(t / 25) + Math.random() * .2,
+      alt: 12 + 3 * Math.sin(t / 25) + Math.random() * .4,
+      lux: Math.max(0, 6000 + 6000 * Math.sin(t / 10) + Math.random() * 100),
+    };
+    commit();
+  };
+  tick(); demoTimer = setInterval(tick, 1000);
+  $("btnDemo").textContent = "Parar demonstração";
+  setStatus("Modo demonstração: os valores são simulados.");
+}
+function stopDemo() {
+  if (!demoTimer) return;
+  clearInterval(demoTimer); demoTimer = null;
+  $("btnDemo").textContent = "Ver demonstração";
+}
+
+$("btnConnect").addEventListener("click", () => port ? disconnect() : connect());
+$("btnDemo").addEventListener("click", () => demoTimer ? (stopDemo(), setStatus("Demonstração parada.")) : startDemo());
+</script>
+</body>
+</html>
